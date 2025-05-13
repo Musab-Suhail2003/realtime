@@ -1,0 +1,1 @@
+nvcc -o $1 $1.cu -lglfw -lGLEW -lGL --generate-code arch=compute_70,code=sm_70 -diag-suppress 550
