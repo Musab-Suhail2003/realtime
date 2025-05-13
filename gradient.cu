@@ -7,6 +7,7 @@
 
 #define WIDTH 800
 #define HEIGHT 600
+#define GRAVITY 9.81
 
 __device__ float dot(const float3& a, const float3& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
@@ -46,7 +47,7 @@ __global__ void render(uchar4* pixels, float sphereY) {
 
     float t;
     float3 sphereCenter = make_float3(0.0f, sphereY, -1.0f);
-    float radius = 0.5f;
+    float radius = 0.1f;
 
     unsigned char r, g, b;
 
@@ -89,8 +90,20 @@ GLuint createTexture() {
     return tex;
 }
 
-int main() {
-    // Init GLFW
+int main(int argc, char** argv) {
+    float time = 0.0f;
+    float initialY = 1.0f; 
+    float velocity = 0.0f;
+    float damping = 0.95f; // Damping factor for energy loss on bounce
+    float mass = 1.0f; // Mass of the sphere (in kg)
+    float collisionTime = 0.01f; // Approximate collision duration (in seconds)
+
+    if (argc > 1) {
+        damping = atof(argv[1]); // Set initial position from command line argument
+    } else {
+        printf("No damping factor provided, using default value of 0.95\n");
+    }
+
     if (!glfwInit()) {
         printf("Failed to init GLFW!\n");
         return -1;
@@ -110,11 +123,44 @@ int main() {
     dim3 gridSize((WIDTH + blockSize.x - 1) / blockSize.x, 
                   (HEIGHT + blockSize.y - 1) / blockSize.y);
 
-    float time = 0.0f;
-
     while (!glfwWindowShouldClose(window)) {
         time += 0.016f; // ~60fps
-        float sphereY = 0.3f * sinf(time);
+
+        // Update sphere's position using gravity
+        float sphereY = initialY + velocity * time - 0.5f * GRAVITY * time * time;
+
+        // Check if the sphere hits the bottom boundary
+        if (sphereY < -0.865f) {
+            sphereY = -0.865f; // Clamp position to the bottom boundary
+
+            // Ensure collisionTime and mass are valid
+            if (collisionTime <= 0.0f) collisionTime = 0.01f; // Prevent division by zero
+            if (mass <= 0.0f) mass = 1.0f; // Prevent division by zero
+
+            // Calculate the normal force
+            float normalForce = (mass * fabs(velocity)) / collisionTime;
+           
+            // Calculate the reverse velocity based on damping
+            float reverseVelocity = -velocity * damping;
+
+            // Update the sphere's velocity
+            velocity = reverseVelocity;
+
+            // Reset initial position and time
+            initialY = sphereY;
+            time = 0.0f;
+        }
+
+        // Check if the sphere hits the top boundary
+        if (sphereY > 1.0f) {
+            sphereY = 1.0f; // Clamp position to the top boundary
+            velocity = -velocity * damping; // Reverse and dampen velocity
+            initialY = sphereY; // Reset initial position
+            time = 0.0f; // Reset time
+        }
+
+        // Update velocity for the next frame
+        velocity -= GRAVITY * 0.016f;
 
         cudaArray_t array;
         cudaGraphicsMapResources(1, &cudaTexResource, 0);
